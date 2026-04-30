@@ -1,0 +1,70 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "LLM Smart Switcher",
+  "version": "0.1.0",
+  "identifier": "com.davytan.llm-smart-switcher",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "LLM Smart Switcher",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 1100,
+        "minHeight": 760,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "capabilities": ["default"]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Switch LLM providers across your coding tools safely",
+    "longDescription": "LLM Smart Switcher lets you preview, apply, and roll back provider and model changes across Claude Code, VS Code, Cursor, Windsurf, Continue.dev and Terminal — with automatic backups and config diffs before every write.",
+    "copyright": "Copyright © 2026 davytan",
+    "macOS": {
+      "entitlements": "entitlements.plist",
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": null,
+      "providerShortName": null
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": ["English"],
+        "displayLanguageSelector": false
+      },
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    },
+    "linux": {
+      "deb": {
+        "depends": []
+      },
+      "rpm": {
+        "depends": []
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  }
+}

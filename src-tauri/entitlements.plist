@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Required for outbound HTTP to Ollama (localhost) and hosted AI APIs -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <!-- Required for reading and writing tool config files -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <!-- Allows access to ~/Library and ~/.config paths for config discovery -->
+  <key>com.apple.security.files.downloads.read-write</key>
+  <false/>
+</dict>
+</plist>
