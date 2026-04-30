@@ -1,65 +1,122 @@
 # LLM Smart Switcher
 
-Cross-platform desktop scaffold for a local LLM install/run/switch/revert tool built with Tauri, React, and TypeScript.
+Preview, apply, and roll back LLM provider and model changes across your coding tools — with automatic backups and config diffs before every write.
 
-This first pass only creates the project structure and base files. It intentionally does not implement real hardware detection, provider switching, model installation, repair flows, or benchmark execution yet.
+**Supported tools:** Claude Code · VS Code · Cursor · Windsurf · Continue.dev · Terminal  
+**Supported providers:** Anthropic · OpenAI · Google · Ollama · llama.cpp  
+**Platforms:** macOS (Apple Silicon + Intel) · Windows · Linux
 
-## Structure
+---
 
-```text
-.
-├── src/
-│   ├── app/                 # App shell and shared state
-│   ├── components/          # Layout and primitive UI building blocks
-│   ├── constants/           # Navigation and UI variation presets
-│   ├── data/                # Mock app data used for the v1 shell
-│   ├── features/            # Screen-level feature folders
-│   ├── lib/                 # Small client helpers
-│   ├── services/            # Frontend service stubs
-│   ├── styles/              # Global theme and layout styles
-│   └── types/               # Shared TypeScript domain types
-├── src-tauri/
-│   ├── capabilities/        # Tauri window permissions
-│   └── src/commands/        # Native command stubs for next pass
-└── app-*.jsx / *.html       # Existing prototype files kept as reference
+## Download
+
+Go to the [**Releases**](https://github.com/davyprotan/AI--LLM-Smart-Switcher/releases) page and download the file for your OS:
+
+| OS | File to download |
+|---|---|
+| macOS (Apple Silicon + Intel) | `LLM Smart Switcher_x.x.x_universal.dmg` |
+| Windows | `LLM Smart Switcher_x.x.x_x64-setup.exe` |
+| Linux (Debian / Ubuntu) | `llm-smart-switcher_x.x.x_amd64.deb` |
+| Linux (Fedora / RHEL) | `llm-smart-switcher_x.x.x_x86_64.rpm` |
+| Linux (universal AppImage) | `llm-smart-switcher_x.x.x_amd64.AppImage` |
+
+> For full installation steps and first-launch security prompts, see [**docs/installation.md**](docs/installation.md).
+
+---
+
+## What it does
+
+| Screen | Purpose |
+|---|---|
+| **Dashboard** | At-a-glance health: hardware, active providers, baseline status |
+| **Hardware** | CPU, RAM, disk, and GPU detection with live VRAM telemetry |
+| **Models** | Browse Ollama-installed models and hosted API models with VRAM estimates |
+| **Switcher** | Preview and apply provider/model changes per tool with diff preview |
+| **Snapshots** | Capture and compare config baselines; restore any previous state |
+| **Settings** | App preferences and telemetry interval |
+| **Benchmark** | (Roadmap) Run latency and throughput benchmarks |
+
+### How switching works
+
+1. **Preview** — the app shows you exactly which config keys will change and their before/after values before anything is written.
+2. **Backup** — a timestamped backup of the original file is written automatically.
+3. **Apply** — the change is written atomically; the file is verified after writing.
+4. **Rollback** — if verification fails, the backup is restored automatically. Manual rollback is always available from the Snapshots screen.
+
+---
+
+## Quick start (3 steps)
+
+1. Download and install the app for your OS (see [installation guide](docs/installation.md)).
+2. Open the app — it will prompt you to **capture a baseline snapshot** of your current configs.
+3. Go to **Switcher**, pick a tool, choose a provider and model, hit **Preview plan**, then **Apply**.
+
+---
+
+## Supported integrations
+
+| Tool | Config format | Config location |
+|---|---|---|
+| Claude Code | JSON | `~/.claude/settings.json` |
+| VS Code | JSON | Per-platform `settings.json` in `User/` |
+| Cursor | JSON | Per-platform `settings.json` in `User/` |
+| Windsurf | JSON | Per-platform `settings.json` in `User/` |
+| Continue.dev | JSON | `~/.continue/config.json` |
+| Terminal | YAML/JSON | Varies by shell configuration |
+
+See [docs/integrations.md](docs/integrations.md) for per-platform path details.
+
+---
+
+## Local model support (Ollama)
+
+The app auto-discovers models installed via [Ollama](https://ollama.com) at `localhost:11434`. If Ollama is not running, the Models screen falls back to showing the hosted API catalog only.
+
+To install a local model:
 ```
+ollama pull llama3.2:3b
+```
+Then reload the Models screen — it appears automatically.
 
-## Included Screens
+---
 
-- Dashboard
-- Hardware
-- Models
-- Switcher
-- Snapshots
-- Settings
-- Benchmark
+## Safety and backups
 
-## Notes
+- Every config write is preceded by an automatic backup (stored alongside the original file with a timestamp suffix).
+- The app verifies the written file matches the intended change before reporting success.
+- If verification fails, the backup is restored automatically.
+- You can manually restore any snapshot from the Snapshots screen at any time.
 
-- The existing prototype files are intentionally untouched:
-  - `app-components.jsx`
-  - `app-main.jsx`
-  - `app-screens.jsx`
-  - `LLM Smart Switcher.html`
-- The UI shell includes three comparable layout variations as placeholders:
-  - `Operator`
-  - `Studio`
-  - `Compact`
-- Tauri command stubs are in place so we can wire real native logic next without reshaping the project.
+See [docs/safety-and-rollback.md](docs/safety-and-rollback.md) for the full policy.
+
+---
 
 ## Documentation
 
-- [Documentation Index](/Users/davytan/PycharmProjects/AI--LLM%20Smart%20Switcher/docs/README.md)
-- [Roadmap](/Users/davytan/PycharmProjects/AI--LLM%20Smart%20Switcher/docs/roadmap.md)
-- [Architecture](/Users/davytan/PycharmProjects/AI--LLM%20Smart%20Switcher/docs/architecture.md)
-- [Integrations](/Users/davytan/PycharmProjects/AI--LLM%20Smart%20Switcher/docs/integrations.md)
-- [Safety and Rollback](/Users/davytan/PycharmProjects/AI--LLM%20Smart%20Switcher/docs/safety-and-rollback.md)
-- [Testing Strategy](/Users/davytan/PycharmProjects/AI--LLM%20Smart%20Switcher/docs/testing-strategy.md)
+- [Installation guide](docs/installation.md) — download, install, and first-launch steps per OS
+- [Integrations](docs/integrations.md) — supported tools and config path details
+- [Safety and rollback](docs/safety-and-rollback.md) — backup, verification, and restore policy
+- [Architecture](docs/architecture.md) — how the Tauri + React + Rust stack is organized
+- [Roadmap](docs/roadmap.md) — planned features and known limitations
 
-## Next Pass
+---
 
-After you confirm, the next implementation step can wire:
+## Building from source
 
-1. Real hardware detection across macOS, Windows, and Linux.
-2. Config discovery and reversible switching for each supported tool.
-3. Model install/remove flows, snapshot diffing, diagnostics, and benchmark execution.
+See [docs/installation.md#building-from-source](docs/installation.md#building-from-source) for full developer setup instructions.
+
+Quick summary:
+```bash
+# Prerequisites: Rust stable, Node.js 22+, platform build tools
+git clone https://github.com/davyprotan/AI--LLM-Smart-Switcher.git
+cd AI--LLM-Smart-Switcher
+npm install
+npm run tauri dev     # development
+npm run tauri build   # production bundle
+```
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
