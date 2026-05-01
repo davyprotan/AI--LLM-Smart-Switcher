@@ -485,6 +485,20 @@ small,
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+/* ── Models: install row ─────────────────────────────────────────────────── */
+.model-install {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.model-install small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 /* ── Snapshots: compact baseline rows ────────────────────────────────────── */
 .baseline-row {
   display: flex;

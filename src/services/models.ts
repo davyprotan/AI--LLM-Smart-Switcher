@@ -1,6 +1,6 @@
 import { MODELS } from "../data/mockData";
 import { safeInvoke } from "./tauri";
-import type { CommandResponse, ModelCatalogPayload } from "../types/domain";
+import type { CommandResponse, ModelCatalogPayload, ModelPullResult } from "../types/domain";
 
 export async function listModels(): Promise<CommandResponse<ModelCatalogPayload>> {
   const result = await safeInvoke<CommandResponse<ModelCatalogPayload>>("list_available_models");
@@ -28,4 +28,10 @@ export async function listModels(): Promise<CommandResponse<ModelCatalogPayload>
     ],
     meta: { area: "models", source: "mock", generatedAtEpochMs: Date.now() },
   };
+}
+
+export async function pullOllamaModel(
+  model: string,
+): Promise<CommandResponse<ModelPullResult> | null> {
+  return safeInvoke<CommandResponse<ModelPullResult>>("pull_ollama_model", { model });
 }
