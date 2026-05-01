@@ -22,7 +22,11 @@ pub struct BenchmarkSpec {
 pub struct BenchmarkResultEntry {
     pub provider: String,
     pub model_name: String,
+    /// Total wall-clock time for the request — load + prompt eval + generation.
     pub latency_ms: u64,
+    /// Time Ollama spent processing the input prompt before generating the
+    /// first output token. Close enough to time-to-first-token to be useful.
+    pub prompt_eval_ms: Option<u64>,
     pub throughput_tokens_per_sec: Option<f64>,
     pub total_tokens: Option<u32>,
     pub error: Option<String>,
@@ -58,6 +62,7 @@ pub fn run_benchmark(
                 provider: provider.to_string(),
                 model_name: spec.model.clone(),
                 latency_ms: 0,
+                prompt_eval_ms: None,
                 throughput_tokens_per_sec: None,
                 total_tokens: None,
                 error: Some(format!(
@@ -126,6 +131,7 @@ fn benchmark_ollama(model: &str, prompt: &str) -> BenchmarkResultEntry {
                 provider: "ollama".to_string(),
                 model_name: model.to_string(),
                 latency_ms: wall_start.elapsed().as_millis() as u64,
+                prompt_eval_ms: None,
                 throughput_tokens_per_sec: None,
                 total_tokens: None,
                 error: Some(format!("Ollama returned HTTP {code}{hint}{detail}")),
@@ -136,6 +142,7 @@ fn benchmark_ollama(model: &str, prompt: &str) -> BenchmarkResultEntry {
                 provider: "ollama".to_string(),
                 model_name: model.to_string(),
                 latency_ms: wall_start.elapsed().as_millis() as u64,
+                prompt_eval_ms: None,
                 throughput_tokens_per_sec: None,
                 total_tokens: None,
                 error: Some(format!(
@@ -152,6 +159,7 @@ fn benchmark_ollama(model: &str, prompt: &str) -> BenchmarkResultEntry {
                 provider: "ollama".to_string(),
                 model_name: model.to_string(),
                 latency_ms: wall_start.elapsed().as_millis() as u64,
+                prompt_eval_ms: None,
                 throughput_tokens_per_sec: None,
                 total_tokens: None,
                 error: Some(format!("Could not parse Ollama response: {e}")),
@@ -162,10 +170,13 @@ fn benchmark_ollama(model: &str, prompt: &str) -> BenchmarkResultEntry {
     let eval_count = json["eval_count"].as_u64();
     let eval_duration_ns = json["eval_duration"].as_u64();
     let total_duration_ns = json["total_duration"].as_u64();
+    let prompt_eval_duration_ns = json["prompt_eval_duration"].as_u64();
 
     let latency_ms = total_duration_ns
         .map(|ns| ns / 1_000_000)
         .unwrap_or_else(|| wall_start.elapsed().as_millis() as u64);
+
+    let prompt_eval_ms = prompt_eval_duration_ns.map(|ns| ns / 1_000_000);
 
     let throughput = match (eval_count, eval_duration_ns) {
         (Some(tokens), Some(duration_ns)) if duration_ns > 0 => {
@@ -179,6 +190,7 @@ fn benchmark_ollama(model: &str, prompt: &str) -> BenchmarkResultEntry {
         provider: "ollama".to_string(),
         model_name: model.to_string(),
         latency_ms,
+        prompt_eval_ms,
         throughput_tokens_per_sec: throughput,
         total_tokens: eval_count.map(|c| c as u32),
         error: None,

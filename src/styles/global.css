@@ -485,6 +485,40 @@ small,
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
+/* ── Models: fit + cloud pills ───────────────────────────────────────────── */
+.card-pill-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+.fit-pill,
+.cloud-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  border: 1px solid currentColor;
+  background: rgba(255, 255, 255, 0.02);
+  white-space: nowrap;
+}
+.fit-fits { color: #3fb950; }
+.fit-tight { color: #58a6ff; }
+.fit-swap { color: #f0ab00; }
+.fit-wont { color: #f85149; }
+.cloud-pill { color: var(--muted); }
+.text-muted { color: var(--muted); display: block; margin-top: 6px; }
+
+/* Inline pill variant inside the Benchmark model checkbox row */
+.model-checkbox .fit-pill {
+  margin-left: auto;
+  font-size: 0.65rem;
+  padding: 1px 6px;
+}
+
 /* ── Models: install row ─────────────────────────────────────────────────── */
 .model-install {
   display: flex;
@@ -607,7 +641,7 @@ small,
 .results-head,
 .results-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 0.8fr 1.4fr;
+  grid-template-columns: 1.6fr 0.9fr 1fr 0.9fr 0.7fr 1.5fr;
   gap: 12px;
   align-items: center;
 }
@@ -623,6 +657,20 @@ small,
   padding: 12px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
+
+.results-footnote {
+  display: block;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-style: italic;
+}
+
+/* Throughput tier colors — heuristic verdict on Ollama eval rate */
+.tput-fast { color: #3fb950; }
+.tput-good { color: #58a6ff; }
+.tput-usable { color: #f0ab00; }
+.tput-slow { color: #f85149; }
 
 .switcher-plan-form {
   margin-top: 18px;

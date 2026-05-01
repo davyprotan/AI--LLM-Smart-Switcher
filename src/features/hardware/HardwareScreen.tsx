@@ -1,47 +1,16 @@
-import { useEffect, useState } from "react";
 import { Card } from "../../components/ui/Card";
 import { WarningBanner } from "../../components/ui/WarningBanner";
 import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SectionHeader } from "../../components/ui/SectionHeader";
 import { percent } from "../../lib/format";
-import { scanHardware } from "../../services/hardware";
-import type { CommandResponse, HardwareScanPayload, WarningItem } from "../../types/domain";
+import { useAppState } from "../../app/state";
+import type { WarningItem } from "../../types/domain";
 
 export function HardwareScreen() {
-  const [hardware, setHardware] = useState<CommandResponse<HardwareScanPayload> | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-
-    scanHardware()
-      .then((result) => {
-        if (active) {
-          setHardware(result);
-          setLoadFailed(false);
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setLoadFailed(true);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (loadFailed) {
-    return (
-      <div className="screen-stack">
-        <SectionHeader
-          title="Hardware Detection"
-          description="The hardware service failed to load, so the native system summary could not be shown."
-        />
-      </div>
-    );
-  }
+  // The hardware scan is fetched once at app boot in `AppStateProvider`, so
+  // this screen just consumes the cached value rather than triggering its
+  // own native probe on every mount.
+  const { hardwareScan: hardware } = useAppState();
 
   if (!hardware) {
     return (

@@ -43,19 +43,29 @@ pub fn start_hardware_telemetry(
     let tick = interval_ms.max(MINIMUM_CPU_UPDATE_INTERVAL.as_millis() as u64 + 50);
 
     std::thread::spawn(move || {
-        let mut system = System::new_all();
+        // `System::new()` is far cheaper than `new_all()` because it skips
+        // process / component / network probing — we never read those on the
+        // hot path. We only need CPU + memory.
+        let mut system = System::new();
+        // Cache the disk list and refresh it in place each tick instead of
+        // reallocating a fresh `Disks` struct on every iteration.
+        let mut disks = Disks::new_with_refreshed_list();
 
         // Detect GPU once at thread start to get static total VRAM
         let gpu_static = crate::gpu::detect();
         let vram_total_gb = gpu_static.vram_total_gb;
 
         while running.load(Ordering::SeqCst) {
-            system.refresh_all();
+            // Two CPU samples MINIMUM_CPU_UPDATE_INTERVAL apart give us an
+            // accurate global usage % per sysinfo's contract.
+            system.refresh_cpu_usage();
             std::thread::sleep(MINIMUM_CPU_UPDATE_INTERVAL);
             system.refresh_cpu_usage();
             system.refresh_memory();
+            // `false` keeps disks that disappeared between ticks in the list;
+            // we don't care since we only sum totals/free.
+            disks.refresh(false);
 
-            let disks = Disks::new_with_refreshed_list();
             let total_disk: u64 = disks.list().iter().map(|d| d.total_space()).sum();
             let free_disk: u64 = disks.list().iter().map(|d| d.available_space()).sum();
 

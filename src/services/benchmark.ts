@@ -13,6 +13,7 @@ export function buildMockBenchmarkResult(spec: BenchmarkSpec): BenchmarkResultEn
     provider: spec.provider,
     modelName: spec.model,
     latencyMs: 0,
+    promptEvalMs: null,
     throughputTokensPerSec: null,
     totalTokens: null,
     error: "Preview mode — Tauri not active. Run in the desktop app to benchmark real models.",
