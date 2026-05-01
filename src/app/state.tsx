@@ -15,7 +15,18 @@ import {
 } from "../data/mockData";
 import { UI_VARIATIONS } from "../constants/variations";
 import { scanHardware } from "../services/hardware";
-import type { CommandResponse, HardwareScanPayload, ScreenId } from "../types/domain";
+import { listModels } from "../services/models";
+import { listSnapshotDiff, listSnapshots } from "../services/snapshots";
+import { listBackups } from "../services/switcher";
+import type {
+  BackupEntry,
+  CommandResponse,
+  HardwareScanPayload,
+  ModelCatalogPayload,
+  ScreenId,
+  SnapshotDiffPayload,
+  SnapshotStorePayload,
+} from "../types/domain";
 
 interface AppStateValue {
   version: string;
@@ -32,6 +43,18 @@ interface AppStateValue {
    */
   hardwareScan: CommandResponse<HardwareScanPayload> | null;
   refreshHardwareScan: () => Promise<void>;
+  /** Cached Ollama + hosted-API model catalog. */
+  modelCatalog: CommandResponse<ModelCatalogPayload> | null;
+  refreshModelCatalog: () => Promise<void>;
+  /** Cached baseline snapshot store. */
+  snapshotStore: CommandResponse<SnapshotStorePayload> | null;
+  refreshSnapshotStore: () => Promise<CommandResponse<SnapshotStorePayload> | null>;
+  /** Cached current-vs-baseline diff. */
+  snapshotDiff: CommandResponse<SnapshotDiffPayload> | null;
+  refreshSnapshotDiff: () => Promise<void>;
+  /** Cached backup list. */
+  backupList: BackupEntry[];
+  refreshBackupList: () => Promise<void>;
   warnings: typeof WARNINGS;
   sessionMetrics: typeof SESSION_METRICS;
   hardwareProfile: typeof HARDWARE_PROFILE;
@@ -53,6 +76,10 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const [selectedVariationId, setSelectedVariationId] = useState("operator");
   const [baselineCaptured, setBaselineCapturedRaw] = useState(false);
   const [hardwareScan, setHardwareScan] = useState<CommandResponse<HardwareScanPayload> | null>(null);
+  const [modelCatalog, setModelCatalog] = useState<CommandResponse<ModelCatalogPayload> | null>(null);
+  const [snapshotStore, setSnapshotStore] = useState<CommandResponse<SnapshotStorePayload> | null>(null);
+  const [snapshotDiff, setSnapshotDiff] = useState<CommandResponse<SnapshotDiffPayload> | null>(null);
+  const [backupList, setBackupList] = useState<BackupEntry[]>([]);
 
   const setBaselineCaptured = useCallback((captured: boolean) => {
     setBaselineCapturedRaw(captured);
@@ -68,11 +95,57 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
-  // Run the native system probe exactly once at app boot so no individual
-  // screen has to trigger its own (and pay the ~300ms cost on each mount).
+  const refreshModelCatalog = useCallback(async () => {
+    try {
+      setModelCatalog(await listModels());
+    } catch {
+      /* keep stale catalog rather than wiping the UI on a transient error */
+    }
+  }, []);
+
+  const refreshSnapshotStore = useCallback(async () => {
+    try {
+      const result = await listSnapshots();
+      setSnapshotStore(result);
+      return result;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const refreshSnapshotDiff = useCallback(async () => {
+    try {
+      setSnapshotDiff(await listSnapshotDiff());
+    } catch {
+      /* keep stale diff */
+    }
+  }, []);
+
+  const refreshBackupList = useCallback(async () => {
+    try {
+      const result = await listBackups();
+      setBackupList(result?.data.backups ?? []);
+    } catch {
+      /* keep stale backup list */
+    }
+  }, []);
+
+  // Prime every cache exactly once at app boot. Individual screens only
+  // re-fetch via the explicit refresh functions after a relevant mutation
+  // (capture baseline, apply switch, revert, model pull, etc.).
   useEffect(() => {
     refreshHardwareScan();
-  }, [refreshHardwareScan]);
+    refreshModelCatalog();
+    refreshSnapshotStore();
+    refreshSnapshotDiff();
+    refreshBackupList();
+  }, [
+    refreshHardwareScan,
+    refreshModelCatalog,
+    refreshSnapshotStore,
+    refreshSnapshotDiff,
+    refreshBackupList,
+  ]);
 
   const value = useMemo<AppStateValue>(
     () => ({
@@ -85,6 +158,14 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       setBaselineCaptured,
       hardwareScan,
       refreshHardwareScan,
+      modelCatalog,
+      refreshModelCatalog,
+      snapshotStore,
+      refreshSnapshotStore,
+      snapshotDiff,
+      refreshSnapshotDiff,
+      backupList,
+      refreshBackupList,
       warnings: WARNINGS,
       sessionMetrics: SESSION_METRICS,
       hardwareProfile: HARDWARE_PROFILE,
@@ -98,7 +179,22 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       repairActions: REPAIR_ACTIONS,
       variations: UI_VARIATIONS,
     }),
-    [currentScreen, selectedVariationId, baselineCaptured, setBaselineCaptured, hardwareScan, refreshHardwareScan],
+    [
+      currentScreen,
+      selectedVariationId,
+      baselineCaptured,
+      setBaselineCaptured,
+      hardwareScan,
+      refreshHardwareScan,
+      modelCatalog,
+      refreshModelCatalog,
+      snapshotStore,
+      refreshSnapshotStore,
+      snapshotDiff,
+      refreshSnapshotDiff,
+      backupList,
+      refreshBackupList,
+    ],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

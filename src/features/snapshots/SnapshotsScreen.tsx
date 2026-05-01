@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useAppState } from "../../app/state";
 
 import { Button } from "../../components/ui/Button";
@@ -6,48 +6,31 @@ import { Card } from "../../components/ui/Card";
 import { SectionHeader } from "../../components/ui/SectionHeader";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { WarningBanner } from "../../components/ui/WarningBanner";
-import { captureBaselineSnapshot, listSnapshotDiff, listSnapshots } from "../../services/snapshots";
-import { listBackups, revertFromBackup } from "../../services/switcher";
+import { captureBaselineSnapshot } from "../../services/snapshots";
+import { revertFromBackup } from "../../services/switcher";
 import type {
   BackupEntry,
   BaselineSnapshotEntry,
   CommandResponse,
   RevertPayload,
   SnapshotDiffEntry,
-  SnapshotDiffPayload,
-  SnapshotStorePayload,
   WarningItem,
 } from "../../types/domain";
 
 export function SnapshotsScreen() {
-  const { snapshots, setBaselineCaptured } = useAppState();
-  const [snapshotState, setSnapshotState] = useState<CommandResponse<SnapshotStorePayload> | null>(null);
-  const [diffState, setDiffState] = useState<CommandResponse<SnapshotDiffPayload> | null>(null);
-  const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const {
+    snapshots,
+    setBaselineCaptured,
+    snapshotStore: snapshotState,
+    snapshotDiff: diffState,
+    backupList: backups,
+    refreshSnapshotStore,
+    refreshSnapshotDiff,
+    refreshBackupList,
+  } = useAppState();
   const [revertResults, setRevertResults] = useState<Record<string, CommandResponse<RevertPayload> | null>>({});
   const [reverting, setReverting] = useState<string | null>(null);
   const [capturing, setCapturing] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-
-    Promise.all([listSnapshots(), listSnapshotDiff(), listBackups()])
-      .then(([snapshotResult, diffResult, backupResult]) => {
-        if (!active) return;
-        setSnapshotState(snapshotResult);
-        setDiffState(diffResult);
-        setBackups(backupResult?.data.backups ?? []);
-        setLoadFailed(false);
-      })
-      .catch(() => {
-        if (active) setLoadFailed(true);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   async function handleRevert(backup: BackupEntry) {
     setReverting(backup.id);
@@ -56,9 +39,9 @@ export function SnapshotsScreen() {
     setReverting(null);
 
     if (result?.data.reverted) {
-      const [snapshotResult, diffResult] = await Promise.all([listSnapshots(), listSnapshotDiff()]);
-      setSnapshotState(snapshotResult);
-      setDiffState(diffResult);
+      // The revert mutated the on-disk config; re-prime the shared caches
+      // so any other screen reading them sees the updated state too.
+      await Promise.all([refreshSnapshotStore(), refreshSnapshotDiff(), refreshBackupList()]);
     }
   }
 
@@ -66,29 +49,15 @@ export function SnapshotsScreen() {
     setCapturing(true);
 
     try {
-      const [snapshotResult, diffResult] = await Promise.all([captureBaselineSnapshot(), listSnapshotDiff()]);
-      setSnapshotState(snapshotResult);
-      setDiffState(diffResult);
-      setLoadFailed(false);
-      if (snapshotResult.data.baseline !== null) {
+      const result = await captureBaselineSnapshot();
+      // Push the just-captured baseline into the cache and refresh the diff.
+      await Promise.all([refreshSnapshotStore(), refreshSnapshotDiff()]);
+      if (result.data.baseline !== null) {
         setBaselineCaptured(true);
       }
-    } catch {
-      setLoadFailed(true);
     } finally {
       setCapturing(false);
     }
-  }
-
-  if (loadFailed) {
-    return (
-      <div className="screen-stack">
-        <SectionHeader
-          title="Snapshots"
-          description="The snapshot service failed to load, so baseline capture state could not be shown."
-        />
-      </div>
-    );
   }
 
   if (!snapshotState || !diffState) {

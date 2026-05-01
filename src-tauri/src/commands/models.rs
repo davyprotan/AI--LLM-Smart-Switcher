@@ -112,8 +112,34 @@ pub struct ModelPullResult {
     pub error: Option<String>,
 }
 
+/// Async wrapper that hops the blocking ureq pull onto Tauri's blocking
+/// runtime so a long-running download (potentially > 1h on slow links) can't
+/// monopolise a Tauri worker thread and starve other commands.
 #[tauri::command]
-pub fn pull_ollama_model(
+pub async fn pull_ollama_model(
+    app: tauri::AppHandle,
+    model: String,
+) -> CommandResponse<ModelPullResult> {
+    let model_for_task = model.clone();
+    let join = tauri::async_runtime::spawn_blocking(move || {
+        pull_ollama_model_blocking(app, model_for_task)
+    })
+    .await;
+
+    match join {
+        Ok(result) => result,
+        Err(e) => CommandResponse::native(
+            "models",
+            ModelPullResult {
+                model,
+                success: false,
+                error: Some(format!("pull task failed to complete: {e}")),
+            },
+        ),
+    }
+}
+
+fn pull_ollama_model_blocking(
     app: tauri::AppHandle,
     model: String,
 ) -> CommandResponse<ModelPullResult> {

@@ -7,13 +7,11 @@ import { ProgressBar } from "../../components/ui/ProgressBar";
 import { SectionHeader } from "../../components/ui/SectionHeader";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { WarningBanner } from "../../components/ui/WarningBanner";
-import { listModels, pullOllamaModel } from "../../services/models";
+import { pullOllamaModel } from "../../services/models";
 import { useAppState } from "../../app/state";
 import { fitTier, fitRank, type FitTier } from "../../lib/fit";
 import type {
-  CommandResponse,
   ModelCatalogItem,
-  ModelCatalogPayload,
   ModelPullProgress,
   WarningItem,
 } from "../../types/domain";
@@ -27,35 +25,13 @@ interface PullState {
 }
 
 export function ModelsScreen() {
-  const { hardwareScan } = useAppState();
+  const { hardwareScan, modelCatalog: state, refreshModelCatalog } = useAppState();
   const vramAvailableGb = hardwareScan?.data.profile.gpu.vramGb ?? null;
-  const [state, setState] = useState<CommandResponse<ModelCatalogPayload> | null>(null);
-  const [loadFailed, setLoadFailed] = useState(false);
   const [pulls, setPulls] = useState<Record<string, PullState>>({});
   const unlistenRef = useRef<(() => void) | null>(null);
 
-  function refresh() {
-    listModels()
-      .then((result) => {
-        setState(result);
-        setLoadFailed(false);
-      })
-      .catch(() => setLoadFailed(true));
-  }
-
   useEffect(() => {
     let active = true;
-
-    listModels()
-      .then((result) => {
-        if (active) {
-          setState(result);
-          setLoadFailed(false);
-        }
-      })
-      .catch(() => {
-        if (active) setLoadFailed(true);
-      });
 
     if (isTauri()) {
       (async () => {
@@ -94,8 +70,9 @@ export function ModelsScreen() {
     }));
     const result = await pullOllamaModel(modelName);
     if (result?.data.success) {
-      // Re-fetch so the card flips from "available" → "installed".
-      refresh();
+      // Re-fetch the shared catalog so the card flips from
+      // "available" → "installed" everywhere it's read.
+      refreshModelCatalog();
     } else if (result?.data.error) {
       setPulls((prev) => ({
         ...prev,
@@ -116,17 +93,6 @@ export function ModelsScreen() {
     () => (state ? sortModelsByFit(state.data.models, vramAvailableGb) : []),
     [state, vramAvailableGb],
   );
-
-  if (loadFailed) {
-    return (
-      <div className="screen-stack">
-        <SectionHeader
-          title="Model Library"
-          description="Model catalog failed to load."
-        />
-      </div>
-    );
-  }
 
   if (!state) {
     return (

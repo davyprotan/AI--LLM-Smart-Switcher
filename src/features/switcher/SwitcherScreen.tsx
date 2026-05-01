@@ -207,7 +207,7 @@ function IntegrationRow({
 }
 
 export function SwitcherScreen() {
-  const { setCurrentScreen } = useAppState();
+  const { setCurrentScreen, refreshSnapshotDiff, refreshBackupList } = useAppState();
   const [assignments, setAssignments] = useState<CommandResponse<IntegrationDiscoveryPayload> | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [rowStates, setRowStates] = useState<Record<string, RowState>>({});
@@ -293,6 +293,13 @@ export function SwitcherScreen() {
       ...prev,
       [id]: { ...prev[id], apply: { loading: false, result } } as RowState,
     }));
+
+    if (result?.data.verified && !result.data.rolledBack) {
+      // Apply mutated the on-disk config and wrote a new backup; refresh the
+      // shared caches so the Snapshots screen and first-run banner stay in sync.
+      void refreshSnapshotDiff();
+      void refreshBackupList();
+    }
   }
 
   if (loadFailed) {
