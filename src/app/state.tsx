@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type PropsWithChildren } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type PropsWithChildren } from "react";
 import {
   ACTIVITY_LOG,
   APP_VERSION,
@@ -14,7 +14,8 @@ import {
   WARNINGS,
 } from "../data/mockData";
 import { UI_VARIATIONS } from "../constants/variations";
-import type { ScreenId } from "../types/domain";
+import { scanHardware } from "../services/hardware";
+import type { CommandResponse, HardwareScanPayload, ScreenId } from "../types/domain";
 
 interface AppStateValue {
   version: string;
@@ -24,6 +25,13 @@ interface AppStateValue {
   setSelectedVariationId: (variationId: string) => void;
   baselineCaptured: boolean;
   setBaselineCaptured: (captured: boolean) => void;
+  /**
+   * Result of `scanHardware()` cached at the app level so each screen does not
+   * trigger its own native system scan. `null` while the first scan is in
+   * flight or if it failed.
+   */
+  hardwareScan: CommandResponse<HardwareScanPayload> | null;
+  refreshHardwareScan: () => Promise<void>;
   warnings: typeof WARNINGS;
   sessionMetrics: typeof SESSION_METRICS;
   hardwareProfile: typeof HARDWARE_PROFILE;
@@ -44,10 +52,27 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const [currentScreen, setCurrentScreen] = useState<ScreenId>("dashboard");
   const [selectedVariationId, setSelectedVariationId] = useState("operator");
   const [baselineCaptured, setBaselineCapturedRaw] = useState(false);
+  const [hardwareScan, setHardwareScan] = useState<CommandResponse<HardwareScanPayload> | null>(null);
 
   const setBaselineCaptured = useCallback((captured: boolean) => {
     setBaselineCapturedRaw(captured);
   }, []);
+
+  const refreshHardwareScan = useCallback(async () => {
+    try {
+      const result = await scanHardware();
+      setHardwareScan(result);
+    } catch {
+      /* leave previous value in place; fit badges & hardware screen
+         already gracefully handle a null scan */
+    }
+  }, []);
+
+  // Run the native system probe exactly once at app boot so no individual
+  // screen has to trigger its own (and pay the ~300ms cost on each mount).
+  useEffect(() => {
+    refreshHardwareScan();
+  }, [refreshHardwareScan]);
 
   const value = useMemo<AppStateValue>(
     () => ({
@@ -58,6 +83,8 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       setSelectedVariationId,
       baselineCaptured,
       setBaselineCaptured,
+      hardwareScan,
+      refreshHardwareScan,
       warnings: WARNINGS,
       sessionMetrics: SESSION_METRICS,
       hardwareProfile: HARDWARE_PROFILE,
@@ -71,7 +98,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       repairActions: REPAIR_ACTIONS,
       variations: UI_VARIATIONS,
     }),
-    [currentScreen, selectedVariationId, baselineCaptured, setBaselineCaptured],
+    [currentScreen, selectedVariationId, baselineCaptured, setBaselineCaptured, hardwareScan, refreshHardwareScan],
   );
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

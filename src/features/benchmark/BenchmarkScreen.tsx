@@ -7,7 +7,7 @@ import { SectionHeader } from "../../components/ui/SectionHeader";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { buildMockBenchmarkResult, runBenchmark } from "../../services/benchmark";
 import { listModels } from "../../services/models";
-import { scanHardware } from "../../services/hardware";
+import { useAppState } from "../../app/state";
 import { fitTier } from "../../lib/fit";
 import type { BenchmarkResultEntry, BenchmarkSpec } from "../../types/domain";
 
@@ -30,11 +30,12 @@ interface ModelOption {
 }
 
 export function BenchmarkScreen() {
+  const { hardwareScan } = useAppState();
+  const vramAvailableGb = hardwareScan?.data.profile.gpu.vramGb ?? null;
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
   const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [ollamaAvailable, setOllamaAvailable] = useState(false);
-  const [vramAvailableGb, setVramAvailableGb] = useState<number | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<BenchmarkResultEntry[]>([]);
@@ -60,13 +61,6 @@ export function BenchmarkScreen() {
       }
       setModelsLoaded(true);
     });
-    scanHardware()
-      .then((result) => {
-        if (active) setVramAvailableGb(result.data.profile.gpu.vramGb);
-      })
-      .catch(() => {
-        /* fit hints just won't show if hardware scan fails */
-      });
     return () => {
       active = false;
       unlistenRef.current?.();
@@ -101,10 +95,14 @@ export function BenchmarkScreen() {
       return;
     }
 
+    // Drop any listener left over from a previous run before subscribing
+    // again, so we don't end up with two callbacks pushing into `results`.
     unlistenRef.current?.();
-    unlistenRef.current = await listen<BenchmarkResultEntry>("benchmark-progress", (event) => {
+    unlistenRef.current = null;
+    const unlisten = await listen<BenchmarkResultEntry>("benchmark-progress", (event) => {
       setResults((prev) => [...prev, event.payload]);
     });
+    unlistenRef.current = unlisten;
 
     await runBenchmark(prompt, specs);
 

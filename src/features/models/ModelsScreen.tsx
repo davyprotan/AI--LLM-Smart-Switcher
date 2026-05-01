@@ -8,7 +8,7 @@ import { SectionHeader } from "../../components/ui/SectionHeader";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { WarningBanner } from "../../components/ui/WarningBanner";
 import { listModels, pullOllamaModel } from "../../services/models";
-import { scanHardware } from "../../services/hardware";
+import { useAppState } from "../../app/state";
 import { fitTier, fitRank, type FitTier } from "../../lib/fit";
 import type {
   CommandResponse,
@@ -27,10 +27,11 @@ interface PullState {
 }
 
 export function ModelsScreen() {
+  const { hardwareScan } = useAppState();
+  const vramAvailableGb = hardwareScan?.data.profile.gpu.vramGb ?? null;
   const [state, setState] = useState<CommandResponse<ModelCatalogPayload> | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [pulls, setPulls] = useState<Record<string, PullState>>({});
-  const [vramAvailableGb, setVramAvailableGb] = useState<number | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
 
   function refresh() {
@@ -56,23 +57,26 @@ export function ModelsScreen() {
         if (active) setLoadFailed(true);
       });
 
-    scanHardware()
-      .then((result) => {
-        if (active) setVramAvailableGb(result.data.profile.gpu.vramGb);
-      })
-      .catch(() => {
-        /* fit badges silently fall back to "no badge" if hardware scan fails */
-      });
-
     if (isTauri()) {
       (async () => {
-        unlistenRef.current = await listen<ModelPullProgress>("model-pull-progress", (event) => {
-          const { model, status, total, completed, error, done } = event.payload;
-          setPulls((prev) => ({
-            ...prev,
-            [model]: { status, total, completed, error, done },
-          }));
-        });
+        try {
+          const unlisten = await listen<ModelPullProgress>("model-pull-progress", (event) => {
+            const { model, status, total, completed, error, done } = event.payload;
+            setPulls((prev) => ({
+              ...prev,
+              [model]: { status, total, completed, error, done },
+            }));
+          });
+          // If we unmounted while waiting for `listen` to resolve, drop the
+          // listener immediately rather than leaking it.
+          if (active) {
+            unlistenRef.current = unlisten;
+          } else {
+            unlisten();
+          }
+        } catch {
+          /* If listen() rejects (rare), there's nothing to clean up. */
+        }
       })();
     }
 
