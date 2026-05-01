@@ -1,5 +1,22 @@
 use std::process::Command;
 
+/// Build a `Command` that won't flash a console window on Windows. Without
+/// `CREATE_NO_WINDOW` every poll of `nvidia-smi` / `wmic` / `powershell` from
+/// the telemetry timer pops a brief cmd window in the user's face.
+fn silent_command(program: &str) -> Command {
+    let cmd = Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut cmd = cmd;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        return cmd;
+    }
+    #[allow(unreachable_code)]
+    cmd
+}
+
 pub struct GpuInfo {
     pub name: String,
     pub vendor: String,
@@ -54,7 +71,7 @@ pub fn poll_vram_used_gb() -> Option<f64> {
 
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 fn poll_nvidia_vram_used() -> Option<f64> {
-    let output = Command::new("nvidia-smi")
+    let output = silent_command("nvidia-smi")
         .args(["--query-gpu=memory.used", "--format=csv,noheader,nounits"])
         .output()
         .ok()?;
@@ -156,12 +173,46 @@ fn parse_macos_vram(gpu: &serde_json::Value, key: &str) -> Option<f64> {
 
 #[cfg(target_os = "windows")]
 fn detect_windows() -> Option<GpuInfo> {
-    detect_windows_powershell().or_else(detect_windows_wmic)
+    // Prefer nvidia-smi: WMI's `Win32_VideoController.AdapterRAM` is a 32-bit
+    // DWORD that overflows for any GPU with more than 4 GB of VRAM, so it
+    // reports incorrect totals on every modern GPU.
+    detect_nvidia_via_smi()
+        .or_else(detect_windows_powershell)
+        .or_else(detect_windows_wmic)
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+fn detect_nvidia_via_smi() -> Option<GpuInfo> {
+    let output = silent_command("nvidia-smi")
+        .args([
+            "--query-gpu=name,memory.total,memory.used,driver_version",
+            "--format=csv,noheader,nounits",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let line = text.lines().next()?;
+    let parts: Vec<&str> = line.split(',').map(str::trim).collect();
+    if parts.len() < 4 {
+        return None;
+    }
+    let total_mib: f64 = parts[1].parse().ok()?;
+    let used_mib: f64 = parts[2].parse().unwrap_or(0.0);
+    Some(GpuInfo {
+        name: parts[0].to_string(),
+        vendor: "NVIDIA".to_string(),
+        vram_total_gb: Some(mib_to_gb(total_mib)),
+        vram_used_gb: Some(mib_to_gb(used_mib)),
+        driver: parts[3].to_string(),
+    })
 }
 
 #[cfg(target_os = "windows")]
 fn detect_windows_powershell() -> Option<GpuInfo> {
-    let output = Command::new("powershell")
+    let output = silent_command("powershell")
         .args([
             "-NoProfile",
             "-Command",
@@ -178,7 +229,7 @@ fn detect_windows_powershell() -> Option<GpuInfo> {
 
 #[cfg(target_os = "windows")]
 fn detect_windows_wmic() -> Option<GpuInfo> {
-    let output = Command::new("wmic")
+    let output = silent_command("wmic")
         .args([
             "path",
             "win32_VideoController",
@@ -249,38 +300,9 @@ fn gpu_from_windows_json(json: &serde_json::Value) -> Option<GpuInfo> {
 
 #[cfg(target_os = "linux")]
 fn detect_linux() -> Option<GpuInfo> {
-    detect_linux_nvidia()
+    detect_nvidia_via_smi()
         .or_else(detect_linux_amd_sysfs)
         .or_else(detect_linux_lspci)
-}
-
-#[cfg(target_os = "linux")]
-fn detect_linux_nvidia() -> Option<GpuInfo> {
-    let output = Command::new("nvidia-smi")
-        .args([
-            "--query-gpu=name,memory.total,memory.used,driver_version",
-            "--format=csv,noheader,nounits",
-        ])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    let line = text.lines().next()?;
-    let parts: Vec<&str> = line.split(',').map(str::trim).collect();
-    if parts.len() < 4 {
-        return None;
-    }
-    let total_mib: f64 = parts[1].parse().ok()?;
-    let used_mib: f64 = parts[2].parse().unwrap_or(0.0);
-    Some(GpuInfo {
-        name: parts[0].to_string(),
-        vendor: "NVIDIA".to_string(),
-        vram_total_gb: Some(mib_to_gb(total_mib)),
-        vram_used_gb: Some(mib_to_gb(used_mib)),
-        driver: parts[3].to_string(),
-    })
 }
 
 #[cfg(target_os = "linux")]

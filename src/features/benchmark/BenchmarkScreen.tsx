@@ -5,28 +5,42 @@ import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { SectionHeader } from "../../components/ui/SectionHeader";
 import { StatusPill } from "../../components/ui/StatusPill";
-import { runBenchmark } from "../../services/benchmark";
+import { buildMockBenchmarkResult, runBenchmark } from "../../services/benchmark";
+import { listModels } from "../../services/models";
 import type { BenchmarkResultEntry, BenchmarkSpec } from "../../types/domain";
 
 const DEFAULT_PROMPT =
   "Draft a safe refactor plan for a provider switch, show the diff risk, and propose a one-command rollback.";
 
-const OLLAMA_MODELS: BenchmarkSpec[] = [
-  { provider: "ollama", model: "mistral:7b" },
-  { provider: "ollama", model: "llama3.2:3b" },
-  { provider: "ollama", model: "qwen2.5-coder:7b" },
-];
-
 export function BenchmarkScreen() {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
-  const [selected, setSelected] = useState<Set<string>>(new Set(["ollama/mistral:7b"]));
+  const [availableModels, setAvailableModels] = useState<BenchmarkSpec[]>([]);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const [ollamaAvailable, setOllamaAvailable] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<BenchmarkResultEntry[]>([]);
   const [done, setDone] = useState(false);
   const unlistenRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
+    let active = true;
+    listModels().then((response) => {
+      if (!active) return;
+      const installed = response.data.models
+        .filter((m) => m.provider === "ollama" && m.installStatus === "installed")
+        .map<BenchmarkSpec>((m) => ({ provider: "ollama", model: m.name }));
+      setAvailableModels(installed);
+      setOllamaAvailable(response.data.ollamaAvailable);
+      // pre-select the first installed model so the user can run with one click
+      const first = installed[0];
+      if (first) {
+        setSelected(new Set([`${first.provider}/${first.model}`]));
+      }
+      setModelsLoaded(true);
+    });
     return () => {
+      active = false;
       unlistenRef.current?.();
     };
   }, []);
@@ -42,19 +56,25 @@ export function BenchmarkScreen() {
   }
 
   async function handleRun() {
-    const models = OLLAMA_MODELS.filter((m) => selected.has(`${m.provider}/${m.model}`));
+    const models = availableModels.filter((m) => selected.has(`${m.provider}/${m.model}`));
     if (models.length === 0) return;
 
     setRunning(true);
     setDone(false);
     setResults([]);
 
-    if (isTauri()) {
-      unlistenRef.current?.();
-      unlistenRef.current = await listen<BenchmarkResultEntry>("benchmark-progress", (event) => {
-        setResults((prev) => [...prev, event.payload]);
-      });
+    if (!isTauri()) {
+      // Browser preview: emit mock results so the user sees a clear "preview mode" message
+      setResults(models.map(buildMockBenchmarkResult));
+      setRunning(false);
+      setDone(true);
+      return;
     }
+
+    unlistenRef.current?.();
+    unlistenRef.current = await listen<BenchmarkResultEntry>("benchmark-progress", (event) => {
+      setResults((prev) => [...prev, event.payload]);
+    });
 
     await runBenchmark(prompt, models);
 
@@ -64,7 +84,7 @@ export function BenchmarkScreen() {
     setDone(true);
   }
 
-  const selectedModels = OLLAMA_MODELS.filter((m) => selected.has(`${m.provider}/${m.model}`));
+  const selectedModels = availableModels.filter((m) => selected.has(`${m.provider}/${m.model}`));
 
   return (
     <div className="screen-stack">
@@ -95,25 +115,36 @@ export function BenchmarkScreen() {
           <Card>
             <span className="eyebrow">Ollama Models</span>
             <h3>Select models to benchmark</h3>
-            <p>Only models already pulled in Ollama will complete. Others return an error.</p>
-            <div className="stack-sm" style={{ marginTop: 12 }}>
-              {OLLAMA_MODELS.map((spec) => {
-                const key = `${spec.provider}/${spec.model}`;
-                const isSelected = selected.has(key);
-                return (
-                  <label key={key} className="model-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleModel(spec)}
-                      disabled={running}
-                    />
-                    <span>{spec.model}</span>
-                    <small>{spec.provider}</small>
-                  </label>
-                );
-              })}
-            </div>
+            {!modelsLoaded && <p>Loading installed models…</p>}
+            {modelsLoaded && !ollamaAvailable && (
+              <p>Ollama is not running on localhost:11434. Start Ollama and reopen this screen.</p>
+            )}
+            {modelsLoaded && ollamaAvailable && availableModels.length === 0 && (
+              <p>No Ollama models installed. Pull one first, e.g. <code>ollama pull qwen2.5-coder:7b</code>.</p>
+            )}
+            {modelsLoaded && availableModels.length > 0 && (
+              <>
+                <p>Showing models currently installed in your local Ollama.</p>
+                <div className="stack-sm" style={{ marginTop: 12 }}>
+                  {availableModels.map((spec) => {
+                    const key = `${spec.provider}/${spec.model}`;
+                    const isSelected = selected.has(key);
+                    return (
+                      <label key={key} className="model-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleModel(spec)}
+                          disabled={running}
+                        />
+                        <span>{spec.model}</span>
+                        <small>{spec.provider}</small>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </Card>
         </div>
 

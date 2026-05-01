@@ -14,26 +14,18 @@ import type {
 
 export const APP_VERSION = "0.1.0";
 
-export const WARNINGS: WarningItem[] = [
-  {
-    id: "missing-gemini",
-    title: "Google API key missing",
-    message: "Model cards and warnings are present, but key validation is not wired yet.",
-    tone: "warn",
-  },
-  {
-    id: "switch-safety",
-    title: "Safe revert not implemented yet",
-    message: "Snapshot and restore actions are currently shell-level placeholders only.",
-    tone: "info",
-  },
-];
+// Real warnings are surfaced per-screen by the service layer (e.g. "Ollama not
+// running" from listModels). The global list starts empty so the TopBar badge
+// reflects reality rather than placeholder copy.
+export const WARNINGS: WarningItem[] = [];
 
+// Card structure stays so the user sees what metrics will land here once
+// real session telemetry is wired. Values are neutral em-dashes until then.
 export const SESSION_METRICS: SessionMetric[] = [
-  { id: "tokens", label: "Live Tokens", value: "24,831", detail: "session placeholder" },
-  { id: "latency", label: "Latency", value: "142 ms", detail: "mock TTFT" },
-  { id: "cost", label: "Cost", value: "$0.34", detail: "today placeholder" },
-  { id: "throughput", label: "Throughput", value: "28.4 tok/s", detail: "mock stream rate" },
+  { id: "tokens", label: "Live Tokens", value: "—", detail: "Awaiting session telemetry" },
+  { id: "latency", label: "Latency", value: "—", detail: "Awaiting first request" },
+  { id: "cost", label: "Cost", value: "—", detail: "Cost tracking pending" },
+  { id: "throughput", label: "Throughput", value: "—", detail: "Awaiting first request" },
 ];
 
 export const HARDWARE_PROFILE: HardwareProfile = {
@@ -59,12 +51,9 @@ export const HARDWARE_PROFILE: HardwareProfile = {
   },
 };
 
-export const HARDWARE_GAUGES: HardwareGauge[] = [
-  { id: "gpu", label: "GPU VRAM", used: 9, total: 16, unit: "GB", detail: "compatibility estimate" },
-  { id: "ram", label: "System RAM", used: 20, total: 32, unit: "GB", detail: "runtime headroom" },
-  { id: "cpu", label: "CPU Load", used: 36, total: 100, unit: "%", detail: "background activity" },
-  { id: "disk", label: "Disk Used", used: 606, total: 1024, unit: "GB", detail: "model cache budget" },
-];
+// No mock fallback gauges — Dashboard now shows a "waiting" state until real
+// telemetry arrives, so users never see fake numbers.
+export const HARDWARE_GAUGES: HardwareGauge[] = [];
 
 export const RECOMMENDATION_TIERS: RecommendationTier[] = [
   {
@@ -347,13 +336,9 @@ export const SNAPSHOTS: SnapshotItem[] = [
   },
 ];
 
-export const ACTIVITY_LOG: ActivityLogEntry[] = [
-  { id: "1", timestamp: "09:14:02", level: "SYS", message: "Scaffold booted with mock state only." },
-  { id: "2", timestamp: "09:14:03", level: "INFO", message: "Real hardware scanning is queued for implementation." },
-  { id: "3", timestamp: "09:14:05", level: "OK", message: "Frontend structure created for seven core screens." },
-  { id: "4", timestamp: "09:14:08", level: "WARN", message: "Provider switching still uses placeholder state." },
-  { id: "5", timestamp: "09:14:11", level: "INFO", message: "Native Tauri command stubs are ready for the next pass." },
-];
+// Real activity log streaming will be wired in a follow-up. Until then the
+// Dashboard simply doesn't render this card.
+export const ACTIVITY_LOG: ActivityLogEntry[] = [];
 
 export const BENCHMARK_RESULTS: BenchmarkResult[] = [
   {

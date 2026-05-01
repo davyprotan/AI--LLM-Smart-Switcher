@@ -34,7 +34,7 @@ Go to the [**Releases**](https://github.com/davyprotan/AI--LLM-Smart-Switcher/re
 | **Switcher** | Preview and apply provider/model changes per tool with diff preview |
 | **Snapshots** | Capture and compare config baselines; restore any previous state |
 | **Settings** | App preferences and telemetry interval |
-| **Benchmark** | (Roadmap) Run latency and throughput benchmarks |
+| **Benchmark** | Run latency and throughput benchmarks against installed Ollama models |
 
 ### How switching works
 
