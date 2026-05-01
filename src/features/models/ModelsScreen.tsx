@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { isTauri } from "@tauri-apps/api/core";
 import { Button } from "../../components/ui/Button";
@@ -8,6 +8,8 @@ import { SectionHeader } from "../../components/ui/SectionHeader";
 import { StatusPill } from "../../components/ui/StatusPill";
 import { WarningBanner } from "../../components/ui/WarningBanner";
 import { listModels, pullOllamaModel } from "../../services/models";
+import { scanHardware } from "../../services/hardware";
+import { fitTier, fitRank, type FitTier } from "../../lib/fit";
 import type {
   CommandResponse,
   ModelCatalogItem,
@@ -28,6 +30,7 @@ export function ModelsScreen() {
   const [state, setState] = useState<CommandResponse<ModelCatalogPayload> | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [pulls, setPulls] = useState<Record<string, PullState>>({});
+  const [vramAvailableGb, setVramAvailableGb] = useState<number | null>(null);
   const unlistenRef = useRef<(() => void) | null>(null);
 
   function refresh() {
@@ -51,6 +54,14 @@ export function ModelsScreen() {
       })
       .catch(() => {
         if (active) setLoadFailed(true);
+      });
+
+    scanHardware()
+      .then((result) => {
+        if (active) setVramAvailableGb(result.data.profile.gpu.vramGb);
+      })
+      .catch(() => {
+        /* fit badges silently fall back to "no badge" if hardware scan fails */
       });
 
     if (isTauri()) {
@@ -94,6 +105,13 @@ export function ModelsScreen() {
       }));
     }
   }
+
+  // useMemo must run unconditionally to satisfy the rules of Hooks; gate the
+  // sort body on `state` instead of returning early before it.
+  const sortedModels = useMemo(
+    () => (state ? sortModelsByFit(state.data.models, vramAvailableGb) : []),
+    [state, vramAvailableGb],
+  );
 
   if (loadFailed) {
     return (
@@ -140,13 +158,14 @@ export function ModelsScreen() {
       ))}
 
       <div className="catalog-grid">
-        {models.map((model) => (
+        {sortedModels.map((model) => (
           <ModelCard
             key={model.id}
             model={model}
             ollamaAvailable={ollamaAvailable}
             pull={pulls[model.name]}
             onPull={() => handlePull(model.name)}
+            fit={fitTier(model.vramRequirementGb, vramAvailableGb)}
           />
         ))}
       </div>
@@ -154,21 +173,43 @@ export function ModelsScreen() {
   );
 }
 
+function sortModelsByFit(models: ModelCatalogItem[], vramGb: number | null): ModelCatalogItem[] {
+  const isOllama = (m: ModelCatalogItem) => m.provider === "ollama";
+  return [...models].sort((a, b) => {
+    // Ollama first (locally runnable), then everything else
+    if (isOllama(a) !== isOllama(b)) return isOllama(a) ? -1 : 1;
+    if (isOllama(a)) {
+      // Installed always before available
+      if (a.installStatus !== b.installStatus) {
+        if (a.installStatus === "installed") return -1;
+        if (b.installStatus === "installed") return 1;
+      }
+      const aRank = fitRank(fitTier(a.vramRequirementGb, vramGb));
+      const bRank = fitRank(fitTier(b.vramRequirementGb, vramGb));
+      if (aRank !== bRank) return aRank - bRank;
+    }
+    return a.name.localeCompare(b.name);
+  });
+}
+
 function ModelCard({
   model,
   ollamaAvailable,
   pull,
   onPull,
+  fit,
 }: {
   model: ModelCatalogItem;
   ollamaAvailable: boolean;
   pull: PullState | undefined;
   onPull: () => void;
+  fit: FitTier | null;
 }) {
   const statusTone =
     model.installStatus === "installed" ? "ok" : model.installStatus === "warning" ? "warn" : "idle";
 
   const isOllama = model.provider === "ollama";
+  const isCloud = model.vramRequirementGb == null;
   const canInstall = isOllama && model.installStatus === "available" && ollamaAvailable;
   const pulling = pull && !pull.done;
   const pullPercent =
@@ -183,7 +224,19 @@ function ModelCard({
           <span className="eyebrow">{model.provider}</span>
           <h3>{model.name}</h3>
         </div>
-        <StatusPill tone={statusTone}>{model.installStatus}</StatusPill>
+        <div className="card-pill-stack">
+          <StatusPill tone={statusTone}>{model.installStatus}</StatusPill>
+          {isOllama && fit && (
+            <span className={`fit-pill fit-${fit.id}`} title={fit.label}>
+              {fit.short}
+            </span>
+          )}
+          {isCloud && (
+            <span className="cloud-pill" title="Hosted by the provider — runs in the cloud, not on your GPU.">
+              Cloud
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="meta-grid">
@@ -201,11 +254,14 @@ function ModelCard({
         </div>
         <div>
           <small>VRAM</small>
-          <strong>{model.vramRequirementGb ? `${model.vramRequirementGb} GB` : "API"}</strong>
+          <strong>{model.vramRequirementGb ? `${model.vramRequirementGb} GB` : "n/a"}</strong>
         </div>
       </div>
 
       <p>{model.performanceHint}</p>
+      {isCloud && (
+        <small className="text-muted">Runs on the provider's API · API key required (Settings).</small>
+      )}
       {model.warning ? <small className="text-warning">{model.warning}</small> : null}
 
       {canInstall && (

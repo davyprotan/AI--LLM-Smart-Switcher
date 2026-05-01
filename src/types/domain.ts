@@ -307,6 +307,7 @@ export interface BenchmarkResultEntry {
   provider: string;
   modelName: string;
   latencyMs: number;
+  promptEvalMs: number | null;
   throughputTokensPerSec: number | null;
   totalTokens: number | null;
   error: string | null;
