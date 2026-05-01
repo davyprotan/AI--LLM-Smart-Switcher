@@ -29,8 +29,7 @@ function telemetryToGauges(t: TelemetryPayload): HardwareGauge[] {
 }
 
 export function DashboardScreen() {
-  const { sessionMetrics, warnings, activityLog, variations, selectedVariationId, hardwareGauges: mockGauges } =
-    useAppState();
+  const { sessionMetrics, warnings, activityLog, variations, selectedVariationId } = useAppState();
   const [liveGauges, setLiveGauges] = useState<HardwareGauge[] | null>(null);
   const [telemetryActive, setTelemetryActive] = useState(false);
   const unlistenRef = useRef<(() => void) | null>(null);
@@ -57,8 +56,6 @@ export function DashboardScreen() {
     };
   }, []);
 
-  const hardwareGauges = liveGauges ?? mockGauges;
-
   return (
     <div className="screen-stack">
       <SectionHeader
@@ -66,15 +63,17 @@ export function DashboardScreen() {
         description={
           telemetryActive
             ? "Live system telemetry · updates every 3 s."
-            : "System overview · hardware gauges from mock preview."
+            : "Connecting to native telemetry…"
         }
       />
 
-      <div className="stack-sm">
-        {warnings.map((warning) => (
-          <WarningBanner key={warning.id} warning={warning} />
-        ))}
-      </div>
+      {warnings.length > 0 && (
+        <div className="stack-sm">
+          {warnings.map((warning) => (
+            <WarningBanner key={warning.id} warning={warning} />
+          ))}
+        </div>
+      )}
 
       <div className="metrics-grid">
         {sessionMetrics.map((metric) => (
@@ -98,17 +97,21 @@ export function DashboardScreen() {
           </div>
 
           <div className="stack-md">
-            {hardwareGauges.map((gauge) => (
-              <div key={gauge.id} className="gauge-row">
-                <div className="gauge-labels">
-                  <span>{gauge.label}</span>
-                  <small>
-                    {gauge.used}/{gauge.total} {gauge.unit} · {gauge.detail}
-                  </small>
+            {liveGauges ? (
+              liveGauges.map((gauge) => (
+                <div key={gauge.id} className="gauge-row">
+                  <div className="gauge-labels">
+                    <span>{gauge.label}</span>
+                    <small>
+                      {gauge.used}/{gauge.total} {gauge.unit} · {gauge.detail}
+                    </small>
+                  </div>
+                  <ProgressBar value={percent(gauge.used, gauge.total)} />
                 </div>
-                <ProgressBar value={percent(gauge.used, gauge.total)} />
-              </div>
-            ))}
+              ))
+            ) : (
+              <p>Waiting for the first telemetry tick…</p>
+            )}
           </div>
         </Card>
 
@@ -142,15 +145,19 @@ export function DashboardScreen() {
           </div>
         </div>
 
-        <div className="log-list">
-          {activityLog.map((entry) => (
-            <div key={entry.id} className="log-row">
-              <span>{entry.timestamp}</span>
-              <strong>{entry.level}</strong>
-              <p>{entry.message}</p>
-            </div>
-          ))}
-        </div>
+        {activityLog.length === 0 ? (
+          <p>Activity logging will land here once provider switches and snapshot writes are wired through the event bus.</p>
+        ) : (
+          <div className="log-list">
+            {activityLog.map((entry) => (
+              <div key={entry.id} className="log-row">
+                <span>{entry.timestamp}</span>
+                <strong>{entry.level}</strong>
+                <p>{entry.message}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
