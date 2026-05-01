@@ -10,21 +10,34 @@ import { SwitcherScreen } from "../features/switcher/SwitcherScreen";
 import { SnapshotsScreen } from "../features/snapshots/SnapshotsScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { BenchmarkScreen } from "../features/benchmark/BenchmarkScreen";
-import { captureBaselineSnapshot, listSnapshots } from "../services/snapshots";
+import { captureBaselineSnapshot } from "../services/snapshots";
 
 export function App() {
-  const { currentScreen, setCurrentScreen, version, warnings, models, baselineCaptured, setBaselineCaptured } = useAppState();
+  const {
+    currentScreen,
+    setCurrentScreen,
+    version,
+    warnings,
+    models,
+    baselineCaptured,
+    setBaselineCaptured,
+    snapshotStore,
+    refreshSnapshotStore,
+    refreshSnapshotDiff,
+  } = useAppState();
 
-  // null = still checking
-  const [baselineChecked, setBaselineChecked] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
+  // The first-run banner waits until the snapshot cache has loaded — null
+  // means the initial fetch is still in flight, so don't flash the banner
+  // before we know whether a baseline already exists.
+  const baselineChecked = snapshotStore !== null;
+
   useEffect(() => {
-    listSnapshots().then((result) => {
-      setBaselineCaptured(result.data.baseline !== null);
-      setBaselineChecked(true);
-    });
-  }, [setBaselineCaptured]);
+    if (snapshotStore) {
+      setBaselineCaptured(snapshotStore.data.baseline !== null);
+    }
+  }, [snapshotStore, setBaselineCaptured]);
 
   const activeModelName = useMemo(
     () => models.find((model) => model.installStatus === "installed")?.name ?? "No active model",
@@ -35,6 +48,10 @@ export function App() {
     const result = await captureBaselineSnapshot();
     if (result.data.baseline !== null) {
       setBaselineCaptured(true);
+      // Re-prime the shared cache so anywhere else (Snapshots screen,
+      // first-run banner) immediately sees the freshly captured baseline.
+      void refreshSnapshotStore();
+      void refreshSnapshotDiff();
       setCurrentScreen("snapshots");
     }
   }
