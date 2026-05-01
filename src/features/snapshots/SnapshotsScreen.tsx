@@ -10,8 +10,10 @@ import { captureBaselineSnapshot, listSnapshotDiff, listSnapshots } from "../../
 import { listBackups, revertFromBackup } from "../../services/switcher";
 import type {
   BackupEntry,
+  BaselineSnapshotEntry,
   CommandResponse,
   RevertPayload,
+  SnapshotDiffEntry,
   SnapshotDiffPayload,
   SnapshotStorePayload,
   WarningItem,
@@ -148,44 +150,9 @@ export function SnapshotsScreen() {
               <>
                 <p>Captured at {baseline.createdAt}</p>
                 <small>{baseline.storagePath}</small>
-                <div className="stack-sm" style={{ marginTop: 16 }}>
+                <div className="stack-md" style={{ marginTop: 16 }}>
                   {baseline.entries.map((entry) => (
-                    <div key={entry.id} className="baseline-entry">
-                      <div className="row-heading">
-                        <strong>{entry.tool}</strong>
-                        <StatusPill tone={entry.pathExists ? "ok" : "warn"}>{entry.status}</StatusPill>
-                      </div>
-                      <p>
-                        {entry.providerLabel} · {entry.assignedModelLabel}
-                      </p>
-                      <small>{entry.configPath}</small>
-                      <div className="meta-grid" style={{ marginTop: 12 }}>
-                        <div>
-                          <small>Checksum</small>
-                          <strong>{entry.checksum ?? "Not captured"}</strong>
-                        </div>
-                        <div>
-                          <small>Content bytes</small>
-                          <strong>{entry.contentLength ?? 0}</strong>
-                        </div>
-                        <div>
-                          <small>Readable</small>
-                          <strong>{entry.pathReadable ? "Yes" : "No"}</strong>
-                        </div>
-                        <div>
-                          <small>Writable</small>
-                          <strong>{entry.pathWritable ? "Yes" : "No"}</strong>
-                        </div>
-                        <div>
-                          <small>Parser</small>
-                          <strong>{entry.parserState}</strong>
-                        </div>
-                        <div>
-                          <small>Parser note</small>
-                          <strong>{entry.parserNote}</strong>
-                        </div>
-                      </div>
-                    </div>
+                    <BaselineEntryRow key={entry.id} entry={entry} />
                   ))}
                 </div>
               </>
@@ -267,23 +234,81 @@ export function SnapshotsScreen() {
         <Card>
           <span className="eyebrow">Diff Preview</span>
           <h3>{diffState.data.entries.length > 0 ? "Current vs baseline" : "No baseline diff yet"}</h3>
-          <p>{baseline ? "This compares the current discovery state against the immutable captured baseline." : "Capture a baseline first to compare current state against it."}</p>
-          <div className="diff-preview">
-            {diffState.data.entries.length > 0 ? (
-              diffState.data.entries.map((entry) => (
-                <div key={entry.id}>
-                  <code>{entry.tool}: {entry.state}</code>
-                  <code>changed fields: {entry.changedFields.length > 0 ? entry.changedFields.join(", ") : "none"}</code>
-                  <code>provider: {entry.baselineProviderLabel ?? "n/a"} {"->"} {entry.currentProviderLabel ?? "n/a"}</code>
-                  <code>model: {entry.baselineModelLabel ?? "n/a"} {"->"} {entry.currentModelLabel ?? "n/a"}</code>
-                </div>
-              ))
-            ) : (
-              <code>No captured baseline diff available yet.</code>
-            )}
-          </div>
+          <p>{baseline ? "Compares the current discovery state against the immutable captured baseline." : "Capture a baseline first to compare current state against it."}</p>
+          {diffState.data.entries.length > 0 ? (
+            <div className="diff-rows">
+              {diffState.data.entries.map((entry) => (
+                <DiffRow key={entry.id} entry={entry} />
+              ))}
+            </div>
+          ) : null}
         </Card>
       </div>
+    </div>
+  );
+}
+
+function BaselineEntryRow({ entry }: { entry: BaselineSnapshotEntry }) {
+  return (
+    <div className="baseline-row">
+      <div className="baseline-row-head">
+        <div>
+          <strong>{entry.tool}</strong>
+          <small className="mono">{entry.configPath}</small>
+        </div>
+        <StatusPill tone={entry.pathExists ? "ok" : "warn"}>{entry.status}</StatusPill>
+      </div>
+      <p className="baseline-row-summary">
+        {entry.providerLabel} · {entry.assignedModelLabel}
+      </p>
+      {entry.pathExists ? (
+        <dl className="baseline-row-details">
+          <div>
+            <dt>Checksum</dt>
+            <dd className="mono truncate">{entry.checksum ?? "Not captured"}</dd>
+          </div>
+          <div>
+            <dt>Bytes</dt>
+            <dd>{entry.contentLength ?? 0}</dd>
+          </div>
+          <div>
+            <dt>Read / Write</dt>
+            <dd>
+              {entry.pathReadable ? "yes" : "no"} / {entry.pathWritable ? "yes" : "no"}
+            </dd>
+          </div>
+          <div>
+            <dt>Parser</dt>
+            <dd>{entry.parserState}</dd>
+          </div>
+        </dl>
+      ) : (
+        <small className="baseline-row-note">{entry.parserNote}</small>
+      )}
+    </div>
+  );
+}
+
+function DiffRow({ entry }: { entry: SnapshotDiffEntry }) {
+  const tone = entry.state === "unchanged" ? "idle" : entry.state === "changed" ? "warn" : "info";
+  const provFrom = entry.baselineProviderLabel ?? "—";
+  const provTo = entry.currentProviderLabel ?? "—";
+  const modelFrom = entry.baselineModelLabel ?? "—";
+  const modelTo = entry.currentModelLabel ?? "—";
+  const providerLine =
+    provFrom === provTo ? provFrom : `${provFrom} → ${provTo}`;
+  const modelLine = modelFrom === modelTo ? modelFrom : `${modelFrom} → ${modelTo}`;
+  return (
+    <div className="diff-row">
+      <div className="diff-row-head">
+        <strong>{entry.tool}</strong>
+        <StatusPill tone={tone}>{entry.state}</StatusPill>
+      </div>
+      <small>provider: {providerLine}</small>
+      <small>model: {modelLine}</small>
+      {entry.changedFields.length > 0 && (
+        <small className="diff-row-fields">changed: {entry.changedFields.join(", ")}</small>
+      )}
     </div>
   );
 }
