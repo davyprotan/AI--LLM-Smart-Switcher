@@ -282,10 +282,6 @@ export function SnapshotsScreen() {
               <code>No captured baseline diff available yet.</code>
             )}
           </div>
-          <div className="inline-actions">
-            <Button variant="primary">Restore snapshot</Button>
-            <Button variant="danger">Revert all</Button>
-          </div>
         </Card>
       </div>
     </div>

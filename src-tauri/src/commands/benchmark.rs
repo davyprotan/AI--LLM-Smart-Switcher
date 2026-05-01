@@ -1,9 +1,12 @@
 use super::{CommandResponse, WarningLevel};
 use serde::{Deserialize, Serialize};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 
 const OLLAMA_URL: &str = "http://localhost:11434/api/generate";
+
+// Ollama can take 30s+ on a cold model load; allow plenty of headroom.
+const OLLAMA_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 const DEFAULT_PROMPT: &str =
     "Draft a safe refactor plan for a provider switch, show the diff risk, and propose a one-command rollback.";
 
@@ -97,8 +100,37 @@ fn benchmark_ollama(model: &str, prompt: &str) -> BenchmarkResultEntry {
 
     let wall_start = Instant::now();
 
-    let response = match ureq::post(OLLAMA_URL).send_json(body) {
+    let response = match ureq::post(OLLAMA_URL)
+        .timeout(OLLAMA_REQUEST_TIMEOUT)
+        .send_json(body)
+    {
         Ok(r) => r,
+        Err(ureq::Error::Status(code, response)) => {
+            // Ollama responded with a non-2xx — surface its actual error body so
+            // the user knows whether the model is missing, OOM, etc.
+            let body = response
+                .into_string()
+                .unwrap_or_else(|_| "<unreadable response body>".to_string());
+            let trimmed = body.trim();
+            let detail = if trimmed.is_empty() {
+                String::new()
+            } else {
+                format!(" — {trimmed}")
+            };
+            let hint = match code {
+                404 => " (is the model pulled? `ollama pull <model>`)",
+                500 => " (Ollama server error; check `ollama serve` logs)",
+                _ => "",
+            };
+            return BenchmarkResultEntry {
+                provider: "ollama".to_string(),
+                model_name: model.to_string(),
+                latency_ms: wall_start.elapsed().as_millis() as u64,
+                throughput_tokens_per_sec: None,
+                total_tokens: None,
+                error: Some(format!("Ollama returned HTTP {code}{hint}{detail}")),
+            };
+        }
         Err(e) => {
             return BenchmarkResultEntry {
                 provider: "ollama".to_string(),
@@ -106,7 +138,9 @@ fn benchmark_ollama(model: &str, prompt: &str) -> BenchmarkResultEntry {
                 latency_ms: wall_start.elapsed().as_millis() as u64,
                 throughput_tokens_per_sec: None,
                 total_tokens: None,
-                error: Some(format!("Ollama unreachable: {e}")),
+                error: Some(format!(
+                    "Ollama unreachable at {OLLAMA_URL}: {e} (is `ollama serve` running?)"
+                )),
             };
         }
     };
