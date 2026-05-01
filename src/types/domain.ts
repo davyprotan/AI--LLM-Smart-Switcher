@@ -94,6 +94,21 @@ export interface ModelCatalogPayload {
   models: ModelCatalogItem[];
 }
 
+export interface ModelPullProgress {
+  model: string;
+  status: string;
+  total: number | null;
+  completed: number | null;
+  error: string | null;
+  done: boolean;
+}
+
+export interface ModelPullResult {
+  model: string;
+  success: boolean;
+  error: string | null;
+}
+
 export interface ToolAssignment {
   id: string;
   tool: string;

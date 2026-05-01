@@ -1,5 +1,11 @@
 use super::{CommandResponse, WarningLevel};
 use serde::{Deserialize, Serialize};
+use std::io::{BufRead, BufReader};
+use std::time::Duration;
+use tauri::Emitter;
+
+const OLLAMA_TAGS_URL: &str = "http://localhost:11434/api/tags";
+const OLLAMA_PULL_URL: &str = "http://localhost:11434/api/pull";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,12 +62,16 @@ pub fn list_available_models() -> CommandResponse<ModelCatalogPayload> {
     // Ollama installed models via local HTTP API
     let ollama_result = fetch_ollama_models();
     let ollama_available = ollama_result.is_ok();
+    let installed: Vec<ModelEntry> = ollama_result.unwrap_or_default();
+    let installed_ids: std::collections::HashSet<String> =
+        installed.iter().map(|m| m.id.clone()).collect();
+    models.extend(installed);
 
-    match ollama_result {
-        Ok(ollama_models) => models.extend(ollama_models),
-        Err(_) => {
-            // Add placeholder entries for popular Ollama models so the UI stays useful
-            models.extend(placeholder_ollama_models());
+    // Curated list of popular Ollama models the user can install with one click.
+    // Filter out any that are already installed so we don't show duplicates.
+    for entry in curated_ollama_models() {
+        if !installed_ids.contains(&entry.id) {
+            models.push(entry);
         }
     }
 
@@ -76,26 +86,128 @@ pub fn list_available_models() -> CommandResponse<ModelCatalogPayload> {
         response = response.with_warning(
             "ollama-unavailable",
             WarningLevel::Info,
-            "Ollama is not running or not installed — local model list shows placeholder entries. Start Ollama to see installed models.",
+            "Ollama is not running or not installed — install actions will fail until you start `ollama serve`.",
         );
     }
 
     response
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPullProgress {
+    pub model: String,
+    pub status: String,
+    pub total: Option<u64>,
+    pub completed: Option<u64>,
+    pub error: Option<String>,
+    pub done: bool,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelPullResult {
+    pub model: String,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
 #[tauri::command]
-pub fn install_model_stub(_model_id: String) -> CommandResponse<&'static str> {
+pub fn pull_ollama_model(
+    app: tauri::AppHandle,
+    model: String,
+) -> CommandResponse<ModelPullResult> {
+    let body = serde_json::json!({ "model": model, "stream": true });
+
+    // Pulls can take 10+ minutes on slow connections for big models.
+    let response = match ureq::post(OLLAMA_PULL_URL)
+        .timeout(Duration::from_secs(60 * 60))
+        .send_json(body)
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let err_msg = format!("Could not reach Ollama at {OLLAMA_PULL_URL}: {e}");
+            let _ = app.emit(
+                "model-pull-progress",
+                &ModelPullProgress {
+                    model: model.clone(),
+                    status: "error".to_string(),
+                    total: None,
+                    completed: None,
+                    error: Some(err_msg.clone()),
+                    done: true,
+                },
+            );
+            return CommandResponse::native(
+                "models",
+                ModelPullResult {
+                    model,
+                    success: false,
+                    error: Some(err_msg),
+                },
+            );
+        }
+    };
+
+    let mut last_error: Option<String> = None;
+    let mut saw_success = false;
+    let reader = BufReader::new(response.into_reader());
+
+    for line in reader.lines() {
+        let line = match line {
+            Ok(l) if !l.trim().is_empty() => l,
+            _ => continue,
+        };
+        let json: serde_json::Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        let status = json["status"].as_str().unwrap_or("").to_string();
+        let total = json["total"].as_u64();
+        let completed = json["completed"].as_u64();
+        let error = json["error"].as_str().map(str::to_string);
+
+        if let Some(ref e) = error {
+            last_error = Some(e.clone());
+        }
+        if status == "success" {
+            saw_success = true;
+        }
+
+        let _ = app.emit(
+            "model-pull-progress",
+            &ModelPullProgress {
+                model: model.clone(),
+                status: status.clone(),
+                total,
+                completed,
+                error: error.clone(),
+                done: saw_success || error.is_some(),
+            },
+        );
+
+        if saw_success || error.is_some() {
+            break;
+        }
+    }
+
+    let success = saw_success && last_error.is_none();
     CommandResponse::native(
         "models",
-        "Install orchestration for Ollama, llama.cpp, and hosted providers is still pending.",
+        ModelPullResult {
+            model,
+            success,
+            error: last_error,
+        },
     )
 }
 
 // ── Ollama HTTP fetch ─────────────────────────────────────────────────────────
 
 fn fetch_ollama_models() -> Result<Vec<ModelEntry>, String> {
-    let response = ureq::get("http://localhost:11434/api/tags")
-        .timeout(std::time::Duration::from_secs(3))
+    let response = ureq::get(OLLAMA_TAGS_URL)
+        .timeout(Duration::from_secs(3))
         .call()
         .map_err(|e| e.to_string())?;
 
@@ -244,32 +356,8 @@ fn static_api_models() -> Vec<ModelEntry> {
     ]
 }
 
-fn placeholder_ollama_models() -> Vec<ModelEntry> {
+fn curated_ollama_models() -> Vec<ModelEntry> {
     vec![
-        ModelEntry {
-            id: "ollama/mistral:7b".to_string(),
-            name: "mistral:7b".to_string(),
-            provider: "ollama".to_string(),
-            family: "mistral".to_string(),
-            context_window: "32k tokens".to_string(),
-            install_size: "~4.1 GB".to_string(),
-            vram_requirement_gb: Some(4.1),
-            install_status: "available".to_string(),
-            performance_hint: "Strong all-around local model, excellent code quality".to_string(),
-            warning: Some("Ollama not running — pull with: ollama pull mistral:7b".to_string()),
-        },
-        ModelEntry {
-            id: "ollama/llama3.2:3b".to_string(),
-            name: "llama3.2:3b".to_string(),
-            provider: "ollama".to_string(),
-            family: "llama".to_string(),
-            context_window: "128k tokens".to_string(),
-            install_size: "~2.0 GB".to_string(),
-            vram_requirement_gb: Some(2.0),
-            install_status: "available".to_string(),
-            performance_hint: "Lightweight Meta model with long context — good for quick tasks".to_string(),
-            warning: Some("Ollama not running — pull with: ollama pull llama3.2:3b".to_string()),
-        },
         ModelEntry {
             id: "ollama/qwen2.5-coder:7b".to_string(),
             name: "qwen2.5-coder:7b".to_string(),
@@ -280,7 +368,67 @@ fn placeholder_ollama_models() -> Vec<ModelEntry> {
             vram_requirement_gb: Some(4.7),
             install_status: "available".to_string(),
             performance_hint: "Purpose-built coding model with strong autocomplete".to_string(),
-            warning: Some("Ollama not running — pull with: ollama pull qwen2.5-coder:7b".to_string()),
+            warning: None,
+        },
+        ModelEntry {
+            id: "ollama/llama3.1:8b".to_string(),
+            name: "llama3.1:8b".to_string(),
+            provider: "ollama".to_string(),
+            family: "llama".to_string(),
+            context_window: "128k tokens".to_string(),
+            install_size: "~4.7 GB".to_string(),
+            vram_requirement_gb: Some(4.8),
+            install_status: "available".to_string(),
+            performance_hint: "Strong general-purpose Meta model with long context".to_string(),
+            warning: None,
+        },
+        ModelEntry {
+            id: "ollama/llama3.2:3b".to_string(),
+            name: "llama3.2:3b".to_string(),
+            provider: "ollama".to_string(),
+            family: "llama".to_string(),
+            context_window: "128k tokens".to_string(),
+            install_size: "~2.0 GB".to_string(),
+            vram_requirement_gb: Some(2.0),
+            install_status: "available".to_string(),
+            performance_hint: "Lightweight Meta model — good for quick tasks on small GPUs".to_string(),
+            warning: None,
+        },
+        ModelEntry {
+            id: "ollama/mistral:7b".to_string(),
+            name: "mistral:7b".to_string(),
+            provider: "ollama".to_string(),
+            family: "mistral".to_string(),
+            context_window: "32k tokens".to_string(),
+            install_size: "~4.1 GB".to_string(),
+            vram_requirement_gb: Some(4.1),
+            install_status: "available".to_string(),
+            performance_hint: "Strong all-around local model with solid code quality".to_string(),
+            warning: None,
+        },
+        ModelEntry {
+            id: "ollama/deepseek-coder:6.7b".to_string(),
+            name: "deepseek-coder:6.7b".to_string(),
+            provider: "ollama".to_string(),
+            family: "deepseek".to_string(),
+            context_window: "16k tokens".to_string(),
+            install_size: "~3.8 GB".to_string(),
+            vram_requirement_gb: Some(4.0),
+            install_status: "available".to_string(),
+            performance_hint: "Coding-specialised model, strong on autocomplete and refactors".to_string(),
+            warning: None,
+        },
+        ModelEntry {
+            id: "ollama/gemma3:4b".to_string(),
+            name: "gemma3:4b".to_string(),
+            provider: "ollama".to_string(),
+            family: "gemma".to_string(),
+            context_window: "128k tokens".to_string(),
+            install_size: "~3.3 GB".to_string(),
+            vram_requirement_gb: Some(3.4),
+            install_status: "available".to_string(),
+            performance_hint: "Latest Google open model, balanced quality and footprint".to_string(),
+            warning: None,
         },
     ]
 }

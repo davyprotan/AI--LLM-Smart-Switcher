@@ -11,7 +11,7 @@ pub fn run() {
             commands::system::get_system_summary,
             commands::integrations::discover_supported_integrations,
             commands::models::list_available_models,
-            commands::models::install_model_stub,
+            commands::models::pull_ollama_model,
             commands::switcher::preview_switch_plan,
             commands::switcher::apply_switch_plan,
             commands::switcher::list_backups,
