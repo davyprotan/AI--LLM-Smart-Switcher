@@ -672,6 +672,60 @@ small,
 .tput-usable { color: #f0ab00; }
 .tput-slow { color: #f85149; }
 
+/* ── Benchmark: run history ──────────────────────────────────────────────── */
+.history-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.history-row {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+.history-row-head {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.history-row-head:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.history-when {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+.history-summary {
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.history-toggle {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.history-row-body {
+  padding: 6px 14px 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.history-prompt {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-style: italic;
+}
+
 .switcher-plan-form {
   margin-top: 18px;
   padding-top: 18px;

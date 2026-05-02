@@ -1,12 +1,20 @@
 use super::{CommandResponse, WarningLevel};
+use crate::utils::{home_dir, xdg_config_home};
 use serde::{Deserialize, Serialize};
-use std::time::{Duration, Instant};
+use std::env;
+use std::fs::{create_dir_all, read_to_string, write};
+use std::path::PathBuf;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
 
 const OLLAMA_URL: &str = "http://localhost:11434/api/generate";
 
 // Ollama can take 30s+ on a cold model load; allow plenty of headroom.
 const OLLAMA_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Cap on how many past runs we keep on disk. Tuned to be useful for
+/// before/after comparisons without unbounded growth.
+const MAX_HISTORY_RUNS: usize = 20;
 const DEFAULT_PROMPT: &str =
     "Draft a safe refactor plan for a provider switch, show the diff risk, and propose a one-command rollback.";
 
@@ -17,7 +25,7 @@ pub struct BenchmarkSpec {
     pub model: String,
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BenchmarkResultEntry {
     pub provider: String,
@@ -30,6 +38,27 @@ pub struct BenchmarkResultEntry {
     pub throughput_tokens_per_sec: Option<f64>,
     pub total_tokens: Option<u32>,
     pub error: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchmarkRunRecord {
+    pub id: String,
+    /// Epoch milliseconds at run start, used for sorting and display.
+    pub started_at_epoch_ms: u64,
+    pub prompt: String,
+    pub results: Vec<BenchmarkResultEntry>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BenchmarkHistoryPayload {
+    pub runs: Vec<BenchmarkRunRecord>,
+}
+
+#[derive(Serialize, Deserialize, Default)]
+struct BenchmarkHistoryFile {
+    runs: Vec<BenchmarkRunRecord>,
 }
 
 #[derive(Clone, Serialize)]
@@ -75,7 +104,28 @@ pub fn run_benchmark(
         results.push(result);
     }
 
+    // Persist this run to history before responding so the frontend can pull
+    // it back from `list_benchmark_history` immediately.
+    let run_record = BenchmarkRunRecord {
+        id: format!("run-{}", now_epoch_ms()),
+        started_at_epoch_ms: now_epoch_ms(),
+        prompt: prompt.clone(),
+        results: results.clone(),
+    };
+    let history_warning = match append_history_run(run_record) {
+        Ok(()) => None,
+        Err(e) => Some(e),
+    };
+
     let mut response = CommandResponse::native("benchmark", BenchmarkRunPayload { prompt, results });
+
+    if let Some(err) = history_warning {
+        response = response.with_warning(
+            "history-persist-failed",
+            WarningLevel::Warn,
+            format!("Run completed but could not be saved to history: {err}"),
+        );
+    }
 
     if models.is_empty() {
         response = response.with_warning(
@@ -195,4 +245,102 @@ fn benchmark_ollama(model: &str, prompt: &str) -> BenchmarkResultEntry {
         total_tokens: eval_count.map(|c| c as u32),
         error: None,
     }
+}
+
+// ── Persisted run history ────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn list_benchmark_history() -> CommandResponse<BenchmarkHistoryPayload> {
+    match read_history_file() {
+        Ok(file) => CommandResponse::native(
+            "benchmark",
+            BenchmarkHistoryPayload { runs: file.runs },
+        ),
+        Err(e) => CommandResponse::native(
+            "benchmark",
+            BenchmarkHistoryPayload { runs: Vec::new() },
+        )
+        .with_warning(
+            "history-read-failed",
+            WarningLevel::Warn,
+            format!("Could not read benchmark history: {e}"),
+        ),
+    }
+}
+
+#[tauri::command]
+pub fn clear_benchmark_history() -> CommandResponse<BenchmarkHistoryPayload> {
+    let empty = BenchmarkHistoryFile::default();
+    match write_history_file(&empty) {
+        Ok(()) => CommandResponse::native(
+            "benchmark",
+            BenchmarkHistoryPayload { runs: Vec::new() },
+        ),
+        Err(e) => CommandResponse::native(
+            "benchmark",
+            BenchmarkHistoryPayload { runs: Vec::new() },
+        )
+        .with_warning(
+            "history-clear-failed",
+            WarningLevel::Warn,
+            format!("Could not clear benchmark history: {e}"),
+        ),
+    }
+}
+
+fn append_history_run(run: BenchmarkRunRecord) -> Result<(), String> {
+    let mut file = read_history_file().unwrap_or_default();
+    // Newest first. Cap at MAX_HISTORY_RUNS so the file never grows unbounded.
+    file.runs.insert(0, run);
+    if file.runs.len() > MAX_HISTORY_RUNS {
+        file.runs.truncate(MAX_HISTORY_RUNS);
+    }
+    write_history_file(&file)
+}
+
+fn read_history_file() -> Result<BenchmarkHistoryFile, String> {
+    let path = history_storage_path();
+    if !path.exists() {
+        return Ok(BenchmarkHistoryFile::default());
+    }
+    let content = read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&content).map_err(|e| e.to_string())
+}
+
+fn write_history_file(file: &BenchmarkHistoryFile) -> Result<(), String> {
+    let path = history_storage_path();
+    if let Some(parent) = path.parent() {
+        create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(file).map_err(|e| e.to_string())?;
+    write(path, json).map_err(|e| e.to_string())
+}
+
+fn history_storage_path() -> PathBuf {
+    let tail = ["llm-switcher", "benchmarks", "history.json"];
+
+    if env::consts::OS == "windows" {
+        if let Some(app_data) = env::var_os("APPDATA") {
+            return tail.iter().fold(PathBuf::from(app_data), |p, s| p.join(s));
+        }
+    }
+
+    if env::consts::OS == "linux" {
+        if let Some(xdg) = xdg_config_home() {
+            return tail.iter().fold(xdg, |p, s| p.join(s));
+        }
+    }
+
+    home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".llm-switcher")
+        .join("benchmarks")
+        .join("history.json")
+}
+
+fn now_epoch_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }

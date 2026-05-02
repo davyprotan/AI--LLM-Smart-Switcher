@@ -21,6 +21,8 @@ pub fn run() {
             commands::snapshots::list_snapshot_diff,
             commands::snapshots::restore_snapshot_stub,
             commands::benchmark::run_benchmark,
+            commands::benchmark::list_benchmark_history,
+            commands::benchmark::clear_benchmark_history,
             commands::telemetry::start_hardware_telemetry,
             commands::telemetry::stop_hardware_telemetry,
         ])
