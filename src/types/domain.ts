@@ -318,6 +318,17 @@ export interface BenchmarkRunPayload {
   results: BenchmarkResultEntry[];
 }
 
+export interface BenchmarkRunRecord {
+  id: string;
+  startedAtEpochMs: number;
+  prompt: string;
+  results: BenchmarkResultEntry[];
+}
+
+export interface BenchmarkHistoryPayload {
+  runs: BenchmarkRunRecord[];
+}
+
 export interface TelemetryPayload {
   cpuUsagePct: number;
   ramUsedGb: number;

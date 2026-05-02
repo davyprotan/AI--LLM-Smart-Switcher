@@ -18,8 +18,10 @@ import { scanHardware } from "../services/hardware";
 import { listModels } from "../services/models";
 import { listSnapshotDiff, listSnapshots } from "../services/snapshots";
 import { listBackups } from "../services/switcher";
+import { clearBenchmarkHistory, listBenchmarkHistory } from "../services/benchmark";
 import type {
   BackupEntry,
+  BenchmarkRunRecord,
   CommandResponse,
   HardwareScanPayload,
   ModelCatalogPayload,
@@ -55,6 +57,10 @@ interface AppStateValue {
   /** Cached backup list. */
   backupList: BackupEntry[];
   refreshBackupList: () => Promise<void>;
+  /** Cached benchmark run history (persisted on disk, capped at 20). */
+  benchmarkHistory: BenchmarkRunRecord[];
+  refreshBenchmarkHistory: () => Promise<void>;
+  clearBenchmarkHistory: () => Promise<void>;
   warnings: typeof WARNINGS;
   sessionMetrics: typeof SESSION_METRICS;
   hardwareProfile: typeof HARDWARE_PROFILE;
@@ -80,6 +86,7 @@ export function AppStateProvider({ children }: PropsWithChildren) {
   const [snapshotStore, setSnapshotStore] = useState<CommandResponse<SnapshotStorePayload> | null>(null);
   const [snapshotDiff, setSnapshotDiff] = useState<CommandResponse<SnapshotDiffPayload> | null>(null);
   const [backupList, setBackupList] = useState<BackupEntry[]>([]);
+  const [benchmarkHistory, setBenchmarkHistory] = useState<BenchmarkRunRecord[]>([]);
 
   const setBaselineCaptured = useCallback((captured: boolean) => {
     setBaselineCapturedRaw(captured);
@@ -130,6 +137,24 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     }
   }, []);
 
+  const refreshBenchmarkHistory = useCallback(async () => {
+    try {
+      const result = await listBenchmarkHistory();
+      setBenchmarkHistory(result?.data.runs ?? []);
+    } catch {
+      /* keep stale history */
+    }
+  }, []);
+
+  const clearBenchmarkHistoryCached = useCallback(async () => {
+    try {
+      const result = await clearBenchmarkHistory();
+      setBenchmarkHistory(result?.data.runs ?? []);
+    } catch {
+      /* leave it; user can retry */
+    }
+  }, []);
+
   // Prime every cache exactly once at app boot. Individual screens only
   // re-fetch via the explicit refresh functions after a relevant mutation
   // (capture baseline, apply switch, revert, model pull, etc.).
@@ -139,12 +164,14 @@ export function AppStateProvider({ children }: PropsWithChildren) {
     refreshSnapshotStore();
     refreshSnapshotDiff();
     refreshBackupList();
+    refreshBenchmarkHistory();
   }, [
     refreshHardwareScan,
     refreshModelCatalog,
     refreshSnapshotStore,
     refreshSnapshotDiff,
     refreshBackupList,
+    refreshBenchmarkHistory,
   ]);
 
   const value = useMemo<AppStateValue>(
@@ -166,6 +193,9 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       refreshSnapshotDiff,
       backupList,
       refreshBackupList,
+      benchmarkHistory,
+      refreshBenchmarkHistory,
+      clearBenchmarkHistory: clearBenchmarkHistoryCached,
       warnings: WARNINGS,
       sessionMetrics: SESSION_METRICS,
       hardwareProfile: HARDWARE_PROFILE,
@@ -194,6 +224,9 @@ export function AppStateProvider({ children }: PropsWithChildren) {
       refreshSnapshotDiff,
       backupList,
       refreshBackupList,
+      benchmarkHistory,
+      refreshBenchmarkHistory,
+      clearBenchmarkHistoryCached,
     ],
   );
 
